@@ -171,6 +171,7 @@ def ssa_scaled_dot_product_attention(
     value_states,
     attention_mask,
     output_attentions,
+    attn_mask_startend_row_indices=None,
     training=True,
     sequence_parallel=False,
     ssa_group_size_ratio=None
@@ -189,6 +190,7 @@ def ssa_scaled_dot_product_attention(
             value_states,
             attention_mask,
             output_attentions,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             sequence_parallel=sequence_parallel,
         )
     else:
@@ -258,6 +260,7 @@ def scaled_dot_product_attention(
     value_states,
     attention_mask,
     output_attentions,
+    attn_mask_startend_row_indices=None,
     training=True,
     sequence_parallel=False,
     use_ssa=False,
@@ -275,6 +278,7 @@ def scaled_dot_product_attention(
             value_states,
             attention_mask,
             output_attentions,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             training,
             sequence_parallel,
             ssa_group_size_ratio
@@ -291,6 +295,7 @@ def scaled_dot_product_attention(
                 value_states,
                 attention_mask,
                 output_attentions,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices
                 sequence_parallel=sequence_parallel,
             )
             

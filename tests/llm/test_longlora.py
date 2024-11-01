@@ -48,9 +48,6 @@ class FinetuneTest(LLMTest, unittest.TestCase):
         else:
             finetune_config["dataset_name_or_path"] = self.data_dir
         finetune_config["output_dir"] = self.output_dir
-        if self.model_dir == "qwen2":
-            # qwen2 does not support flash_mask
-            finetune_config["flash_mask"] = False
         with argv_context_guard(finetune_config):
             from run_finetune import main
 

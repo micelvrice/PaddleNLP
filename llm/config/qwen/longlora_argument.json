@@ -33,5 +33,5 @@
     "use_ssa": true,
     "ssa_group_size_ratio": 0.25,
     "autoregressive": true,
-    "flash_mask": true
+    "flash_mask": false
   }
