@@ -181,6 +181,7 @@ def ssa_scaled_dot_product_attention(
     if config.use_flash_attention and flash_attention:
         # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
         # Torch Flash Attention input [ bz, nhead, seqlen, head_dim]
+
         return fusion_ops.fusion_flash_attention(
             query_states,
             config,
