@@ -295,7 +295,6 @@ def ssa_scaled_dot_product_attention(
         attn_weights = paddle.matmul(query_states * (1 / math.sqrt(head_dim)), key_states.transpose([0, 1, 3, 2]))
     else:
         attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
-
     # then add alibi bias
     if alibi is not None:
         alibi = alibi.reshape([bsz, num_heads, 1, -1])
