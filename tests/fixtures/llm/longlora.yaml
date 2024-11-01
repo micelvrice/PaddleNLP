@@ -11,8 +11,8 @@ finetune:
     logging_steps: 1
     evaluation_strategy: "epoch"
     save_strategy: "epoch"
-    src_length: 4096
-    max_length: 8192
+    src_length: 1024
+    max_length: 4096
     pad_to_max_length: true
     fp16: true
     fp16_opt_level: "O2"
@@ -28,8 +28,10 @@ finetune:
     tensor_parallel_degree: 1
     pipeline_parallel_degree: 1
     ignore_save_lr_and_optim: 1
-    use_ssa: true
-    group_size_ratio: 0.25
+    use_ssa: false
+    ssa_group_size_ratio: 0.25
+    autoregressive: false
+    flash_mask: true
 
   default:
     llama:

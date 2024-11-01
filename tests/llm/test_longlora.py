@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import sys
 import unittest
-import os
 from parameterized import parameterized_class
 
 from tests.testing_utils import argv_context_guard, load_test_config
@@ -25,7 +24,10 @@ from .testing_utils import LLMTest
 
 @parameterized_class(
     ["model_dir"],
-    [["llama"], ],
+    [
+        ["llama"],
+        ["qwen2"],
+    ],
 )
 class FinetuneTest(LLMTest, unittest.TestCase):
     config_path: str = "./tests/fixtures/llm/longlora.yaml"
@@ -41,10 +43,14 @@ class FinetuneTest(LLMTest, unittest.TestCase):
 
     def test_finetune(self):
         finetune_config = load_test_config(self.config_path, "finetune", self.model_dir)
-
-        finetune_config["dataset_name_or_path"] = self.data_dir
+        if finetune_config["autoregressive"]:
+            finetune_config["dataset_name_or_path"] = "./tests/fixtures/llm/autoregressive_data/"
+        else:
+            finetune_config["dataset_name_or_path"] = self.data_dir
         finetune_config["output_dir"] = self.output_dir
-
+        if self.model_dir == "qwen2":
+            # qwen2 does not support flash_mask
+            finetune_config["flash_mask"] = False
         with argv_context_guard(finetune_config):
             from run_finetune import main
 

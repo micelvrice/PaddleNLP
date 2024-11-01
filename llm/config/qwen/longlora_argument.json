@@ -6,12 +6,12 @@
     "gradient_accumulation_steps": 4,
     "per_device_eval_batch_size": 8,
     "eval_accumulation_steps":16,
-    "num_train_epochs": 20,
+    "num_train_epochs": 3,
     "learning_rate": 3e-04,
     "warmup_steps": 30,
     "logging_steps": 1,
-    "evaluation_strategy": "no",
-    "save_strategy": "no",
+    "evaluation_strategy": "epoch",
+    "save_strategy": "epoch",
     "max_length": 8192,
     "bf16": true,
     "fp16_opt_level": "O2",
@@ -30,5 +30,8 @@
     "zero_padding": false,
     "use_flash_attention": false,
     "pissa": false,
-    "use_shift_sparse_attention": true
+    "use_ssa": true,
+    "ssa_group_size_ratio": 0.25,
+    "autoregressive": true,
+    "flash_mask": true
   }

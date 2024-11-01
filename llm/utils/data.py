@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import numpy as np
 import paddle
 
@@ -41,7 +42,6 @@ def get_convert_example(model):
         base_model_prefix = model.model.base_model_prefix
     else:
         base_model_prefix = model.base_model_prefix
-
     if base_model_prefix == "chatglm":
         return convert_example_chatglm
     elif base_model_prefix in [
@@ -70,7 +70,7 @@ class DataFormatError(ValueError):
     pass
 
 
-def tokenize_autogressive(tokenizer, example, data_args, is_test=True, zero_padding=False, flash_mask=False):
+def tokenize_unsupervised_example(tokenizer, example, data_args, is_test=True, zero_padding=False, flash_mask=False):
     if "text" in example:
         source = example["text"][0] if isinstance(example["text"], list) else example["text"]
     else:
@@ -79,19 +79,12 @@ def tokenize_autogressive(tokenizer, example, data_args, is_test=True, zero_padd
         )
     outputs = tokenizer(
         source,
-        max_length=data_args.max_length,
         truncation=False,
-        return_tensors="pd",
         padding=True,
         pad_to_multiple_of=data_args.max_length,
     )
 
-    input_batch = paddle.split(
-        outputs["input_ids"], num_or_sections=outputs["input_ids"].shape[1] // data_args.max_length, axis=1
-    )
-    input_batch = paddle.squeeze(input_batch[0]).numpy().tolist()
-    # input_batch = [paddle.squeeze(input_batch[0])]
-    return {"input_ids": input_batch}
+    return outputs
 
 
 def tokenize_example(tokenizer, example, data_args):
@@ -202,36 +195,48 @@ def tokenize_rounds_example(tokenizer, example, data_args, **kwargs):
 
 
 def convert_example_common(
-    example, tokenizer, data_args, is_test=True, zero_padding=False, flash_mask=False, autogressive=False
+    example, tokenizer, data_args, is_test=True, zero_padding=False, flash_mask=False
 ):
-    if tokenizer.chat_template is not None:
-        return convert_rounds_example_common(example, tokenizer, data_args, is_test, zero_padding, flash_mask)
-    if autogressive:
-        return tokenize_autogressive(tokenizer, example, data_args)
-    tokenized_source, tokenized_target_input_ids = tokenize_example(tokenizer, example, data_args)
+    
+    
+    if data_args.autoregressive:
 
-    if is_test:
-        return {
-            **tokenized_source,
-            "labels": tokenized_target_input_ids,
-        }
-    else:
-        input_ids = tokenized_source["input_ids"] + tokenized_target_input_ids
-        source_length = len(tokenized_source["input_ids"])
-        labels = [-100] * source_length + input_ids[source_length:]
-        # shift input_ids and labels
-        input_ids, labels = input_ids[:-1], labels[1:]
+        tokenized_text = tokenize_unsupervised_example(tokenizer, example, data_args)
+        input_ids = tokenized_text['input_ids']
+        labels = input_ids
+
+        input_ids = input_ids[:-1] + [tokenizer.eos_token_id]
+        labels = labels[1:] + [-100]
         seq_length = len(input_ids)
-        features = {"input_ids": input_ids, "labels": labels}
-        if "position_ids" in tokenized_source:
-            features["position_ids"] = list(range(seq_length))
-        if zero_padding:
-            if flash_mask:
-                features["attn_mask_startend_row_indices"] = [seq_length] * seq_length
-            else:
-                features["attention_mask"] = np.tri(seq_length, seq_length, dtype=bool)
+        features = {"input_ids": input_ids, "labels": labels}    
+    else:
+        if tokenizer.chat_template is not None:
+            return convert_rounds_example_common(example, tokenizer, data_args, is_test, zero_padding, flash_mask)
+        else:
+            tokenized_source, tokenized_target_input_ids = tokenize_example(tokenizer, example, data_args)
 
-        return features
+            if is_test:
+                return {
+                    **tokenized_source,
+                    "labels": tokenized_target_input_ids,
+                }
+            else:
+                input_ids = tokenized_source["input_ids"] + tokenized_target_input_ids
+                source_length = len(tokenized_source["input_ids"])
+                labels = [-100] * source_length + input_ids[source_length:]
+                # shift input_ids and labels
+                input_ids, labels = input_ids[:-1], labels[1:]
+                seq_length = len(input_ids)
+                features = {"input_ids": input_ids, "labels": labels}
+                if "position_ids" in tokenized_source:
+                    features["position_ids"] = list(range(seq_length))
+    # maybe change here to suit flash_mask with longlora
+    if zero_padding:
+        if flash_mask:
+            features["attn_mask_startend_row_indices"] = [seq_length] * seq_length
+        else:
+            features["attention_mask"] = np.tri(seq_length, seq_length, dtype=bool)
+    return features
 
 
 def convert_rounds_example_common(example, tokenizer, data_args, is_test=True, zero_padding=False, flash_mask=False):

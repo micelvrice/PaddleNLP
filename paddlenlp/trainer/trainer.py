@@ -2171,7 +2171,6 @@ class Trainer:
                 labels = inputs["generator_labels"]
         else:
             labels = None
-
         outputs = model(**inputs)
 
         if self.criterion is not None:

@@ -56,11 +56,11 @@ class TrainingArguments(TrainingArguments):
     )
     use_ssa: bool = field(
         default=False,
-        metadata={"help": "Whether to use SSA."},
+        metadata={"help": "Whether to use Shifted Sparse Attention (SSA), an efficient attention mechanism introduced in the LongLoRA paper."},
     )
-    group_size_ratio: float = field(
+    ssa_group_size_ratio: float = field(
         default=0.25,
-        metadata={"help": "The ratio of group size."},
+        metadata={"help": "The ratio parameter for grouping in SSA, controlling the number of tokens considered in each group for sparse attention calculation."},
     )
 
     def __post_init__(self):
@@ -143,6 +143,10 @@ class DataArgument:
     pad_to_max_length: bool = field(
         default=False,
         metadata={"help": "Pad the input sequence to `max_length`."},
+    )
+    autoregressive: bool = field(
+        default=False,
+        metadata={"help": "Whether to use autoregressive mode."},
     )
 
     def __post_init__(self):
@@ -236,7 +240,7 @@ class ModelArgument:
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
     flash_mask: bool = field(default=False, metadata={"help": "Whether to use flash_mask in flash attention."})
-
+    base: float = field(default=10000.0, metadata={"help": "The base parameter used in RotaryEmbedding to calculate the frequency of the sinusoidal encoding."})
 
 @dataclass
 class QuantArgument:

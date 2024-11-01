@@ -83,7 +83,6 @@ def main():
     training_args.print_config(data_args, "Data")
     training_args.print_config(quant_args, "Quant")
     training_args.print_config(gen_args, "Generation")
-
     if sum([quant_args.do_ptq, quant_args.do_qat, quant_args.do_gptq, training_args.do_train]) > 1:
         raise ValueError(
             "--do_train, --do_ptq, --do_gptq and --do_qat cannot work at the same time. Please choose only one at a time"
@@ -142,23 +141,23 @@ def main():
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
     if training_args.use_ssa:
-        assert training_args.group_size_ratio is not None, "group_size_ratio must be specified when use_ssa is True"
+        assert training_args.ssa_group_size_ratio is not None, "ssa_group_size_ratio must be specified when use_ssa is True"
         model_config.use_ssa = True
-        model_config.group_size_ratio = training_args.group_size_ratio
+        model_config.ssa_group_size_ratio = training_args.ssa_group_size_ratio
         
         orig_ctx_len = getattr(model_config, "max_position_embeddings", None)
         if orig_ctx_len and data_args.max_length > orig_ctx_len:
             scaling_factor = data_args.max_length / orig_ctx_len
-        model_config.rope_scaling_factor = scaling_factor
-        model_config.use_long_sequence_strategies = True
-        model_config.long_sequence_strategy_type = "embedding_strategies"
-        model_config.long_sequence_strategy_name = "LinearScalingRotaryEmbedding"
-        model_config.long_sequence_init_args = {
-            "dim": model_config.hidden_size // model_config.num_attention_heads,
-            "max_position_embeddings": model_config.max_position_embeddings,
-            "scaling_factor": scaling_factor,
-            "base": 10000.0
-        }
+            model_config.rope_scaling_factor = scaling_factor
+            model_config.use_long_sequence_strategies = True
+            model_config.long_sequence_strategy_type = "embedding_strategies"
+            model_config.long_sequence_strategy_name = "LinearScalingRotaryEmbedding"
+            model_config.long_sequence_init_args = {
+                "dim": model_config.hidden_size // model_config.num_attention_heads,
+                "max_position_embeddings": data_args.max_length,
+                "scaling_factor": scaling_factor,
+                "base": model_args.base
+            }
 
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
@@ -366,7 +365,7 @@ def main():
         trans_func = partial(convert_example_common, tokenizer=tokenizer, data_args=data_args)
     else:
         trans_func = partial(get_convert_example(model), tokenizer=tokenizer, data_args=data_args)
-
+        
     train_ds = (
         train_ds.map(
             partial(trans_func, is_test=False, zero_padding=data_args.zero_padding, flash_mask=model_args.flash_mask)
@@ -393,7 +392,7 @@ def main():
                 trans_func,
                 is_test=data_args.eval_with_do_generation,
                 zero_padding=eval_zero_padding,
-                flash_mask=model_args.flash_mask,
+                flash_mask=model_args.flash_mask
             )
         )
         if dev_ds is not None

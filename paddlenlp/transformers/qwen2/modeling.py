@@ -149,6 +149,93 @@ def parallel_matmul(x: Tensor, y: Tensor, transpose_y=True, tensor_parallel_outp
         logits = paddle.matmul(x, y, transpose_y=transpose_y)
         return logits
 
+def shift(qkv, bsz, q_len, group_size, num_heads, head_dim):
+    if qkv.shape != [bsz, num_heads, q_len, head_dim]:
+        raise ValueError("qkv shape does not match expected shape")
+    
+    # Calculate the shift amount for rolling
+    shift_amount = -group_size // 2
+    # Roll the qkv tensor along the sequence length axis
+    qkv[:, num_heads // 2:] = qkv[:, num_heads // 2:].roll(shift_amount, axis=2)
+
+    # Transpose and reshape the tensor to the desired shape
+    qkv = qkv.transpose([0, 2, 1, 3]).reshape([bsz * (q_len // group_size), num_heads, group_size, head_dim])
+
+    return qkv
+
+def ssa_scaled_dot_production_attention(
+    query_states,
+    config,
+    key_states,
+    value_states,
+    attention_mask,
+    output_attentions,
+    training=True,
+    sequence_parallel=False,
+    ssa_group_size_ratio=None
+):
+    bsz, q_len, num_heads, head_dim = query_states.shape
+    _, kv_seq_len, _, _ = value_states.shape
+
+    # [ bz, seqlen, nhead, head_dim] -> [bs, nhead, seq_len, head_dim]
+    query_states = paddle.transpose(query_states, [0, 2, 1, 3])
+    key_states = paddle.transpose(key_states, [0, 2, 1, 3])
+    value_states = paddle.transpose(value_states, [0, 2, 1, 3])
+
+    assert ssa_group_size_ratio is not None, "ssa_group_size_ratio must be specified"
+    # Calculate the group size based on the sequence length and the group size ratio
+    group_size = int(q_len * ssa_group_size_ratio)
+
+    # Ensure the sequence length is divisible by the group size
+    if q_len % group_size > 0:
+        raise ValueError("q_len %d should be divisible by group size %d."%(q_len, group_size))
+    num_group = q_len // group_size
+
+    # Applying shifting to the query, key, and value states
+    query_states = shift(query_states, bsz, q_len, group_size, num_heads, head_dim)
+    key_states = shift(key_states, bsz, q_len, group_size, num_heads, head_dim)
+    value_states = shift(value_states, bsz, q_len, group_size, num_heads, head_dim)
+
+    # matmul and divide by sqrt(head_dim)
+    attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+
+    if attn_weights.shape != [bsz, num_heads, q_len, kv_seq_len]:
+        raise ValueError(
+            f"Attention weights should be of shape {(bsz, num_heads, q_len, kv_seq_len)}, but is"
+            f" {attn_weights.shape}"
+        )
+
+    if attention_mask is None:
+        attention_mask = get_triangle_upper_mask(attn_weights)
+    if attention_mask.shape != [bsz, 1, q_len, kv_seq_len]:
+        raise ValueError(
+            f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.shape}"
+        )
+    
+    attn_weights = attn_weights + attention_mask    
+    if not paddle.in_dynamic_mode():
+        attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
+    else:
+        with paddle.amp.auto_cast(False):
+            attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
+
+    attn_weights = F.dropout(attn_weights, p=config.attention_dropout, training=training)
+
+    attn_output = paddle.matmul(attn_weights, value_states)
+    attn_output = attn_output.transpose([0, 2, 1, 3])
+
+    # Shift back the attention output
+    attn_output = attn_output.reshape([bsz, q_len, num_heads, group_size, head_dim])
+    attn_output[:, :, num_heads // 2:] = attn_output[:, :, num_heads // 2:].roll(group_size // 2, axis=2)
+
+    if sequence_parallel:
+        attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])
+    else:
+        attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
+    return attn_output, attn_weights if output_attentions else attn_output
+
+
+
 
 def scaled_dot_product_attention(
     query_states,
@@ -159,81 +246,125 @@ def scaled_dot_product_attention(
     output_attentions,
     training=True,
     sequence_parallel=False,
+    use_ssa=False,
+    ssa_group_size_ratio=None
 ):
     bsz, q_len, num_heads, head_dim = query_states.shape
     _, kv_seq_len, _, _ = value_states.shape
 
-    if config.use_flash_attention and flash_attention:
-        # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
-        # Torch Flash Attention input [ bz, nhead, seqlen, head_dim]
 
-        version = paddle.version.full_version
-        if version != "0.0.0" and version <= "2.5.2":
-            attn_output, attn_weights = flash_attention(
-                query_states,
-                key_states,
-                value_states,
-                causal=True,
-                return_softmax=output_attentions,
-            )
-        else:
-            attn_output = F.scaled_dot_product_attention(
-                query_states,
-                key_states,
-                value_states,
-                attn_mask=attention_mask,
-                is_causal=attention_mask is None,
-                dropout_p=config.attention_dropout if training else 0.0,
-                training=training,
-            )
-            attn_weights = None
-
-        if sequence_parallel:
-            attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])
-        else:
-            attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
-        return (attn_output, attn_weights) if output_attentions else attn_output
+    if use_ssa:
+        return ssa_scaled_dot_production_attention(
+            query_states,
+            config,
+            key_states,
+            value_states,
+            attention_mask,
+            output_attentions,
+            training,
+            sequence_parallel,
+            ssa_group_size_ratio
+        )
     else:
-        #  [ bz, seqlen, nhead, head_dim] -> [bs, nhead, seq_len, head_dim]
-        query_states = paddle.transpose(query_states, [0, 2, 1, 3])
-        # merge with the next transpose
-        key_states = paddle.transpose(key_states, [0, 2, 1, 3])
-        value_states = paddle.transpose(value_states, [0, 2, 1, 3])
+        if config.use_flash_attention and flash_attention:
+            # Paddle Flash Attention input [ bz, seqlen, nhead, head_dim]
+            # Torch Flash Attention input [ bz, nhead, seqlen, head_dim]
 
-        # matmul and divide by sqrt(head_dim)
-        attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+            version = paddle.version.full_version
+            if version != "0.0.0" and version <= "2.5.2":
+                attn_output, attn_weights = flash_attention(
+                    query_states,
+                    key_states,
+                    value_states,
+                    causal=True,
+                    return_softmax=output_attentions,
+                )
+            else:
+                attn_output = F.scaled_dot_product_attention(
+                    query_states,
+                    key_states,
+                    value_states,
+                    attn_mask=attention_mask,
+                    is_causal=attention_mask is None,
+                    dropout_p=config.attention_dropout if training else 0.0,
+                    training=training,
+                )
+                attn_weights = None
 
-        if attn_weights.shape != [bsz, num_heads, q_len, kv_seq_len]:
-            raise ValueError(
-                f"Attention weights should be of shape {(bsz, num_heads, q_len, kv_seq_len)}, but is"
-                f" {attn_weights.shape}"
-            )
-
-        if attention_mask is None:
-            attention_mask = get_triangle_upper_mask(attn_weights)
-        attention_mask = attention_mask.reshape([bsz, 1, q_len, kv_seq_len])
-        if attention_mask.shape != [bsz, 1, q_len, kv_seq_len]:
-            raise ValueError(
-                f"Attention mask should be of shape {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.shape}"
-            )
-
-        attn_weights = attn_weights + attention_mask
-        if not paddle.in_dynamic_mode():
-            attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
+            if sequence_parallel:
+                attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])
+            else:
+                attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
+            return (attn_output, attn_weights) if output_attentions else attn_output
         else:
-            with paddle.amp.auto_cast(False):
+            #  [ bz, seqlen, nhead, head_dim] -> [bs, nhead, seq_len, head_dim]
+            query_states = paddle.transpose(query_states, [0, 2, 1, 3])
+            # merge with the next transpose
+            key_states = paddle.transpose(key_states, [0, 2, 1, 3])
+            value_states = paddle.transpose(value_states, [0, 2, 1, 3])
+
+            if use_ssa and ssa_group_size_ratio is not None:
+                # Calculate the group size based on the sequence length and the group size ratio
+                group_size = int(q_len * ssa_group_size_ratio)
+
+                # Ensure the sequence length is divisible by the group size
+                if q_len % group_size > 0:
+                    raise ValueError("q_len %d should be divisible by group size %d."%(q_len, group_size))
+                num_group = q_len // group_size
+
+                # Apply shifting to the query, key, and value states
+                query_states = shift(query_states, bsz, q_len, group_size, num_heads, head_dim)
+                key_states = shift(key_states, bsz, q_len, group_size, num_heads, head_dim)
+                value_states = shift(value_states, bsz, q_len, group_size, num_heads, head_dim) 
+
+
+            # matmul and divide by sqrt(head_dim)
+            attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+
+            if attn_weights.shape != [bsz, num_heads, q_len, kv_seq_len]:
+                raise ValueError(
+                    f"Attention weights should be of shape {(bsz, num_heads, q_len, kv_seq_len)}, but is"
+                    f" {attn_weights.shape}"
+                )
+
+            if attention_mask is None:
+                attention_mask = get_triangle_upper_mask(attn_weights)
+
+            if use_ssa:
+                attention_mask = paddle.tile(paddle.cast(attention_mask[:, :, :group_size, :group_size], dtype="float32"), [num_group, 1, 1, 1])
+                if attention_mask.shape != [bsz * num_group, 1, group_size, group_size]:
+                    raise ValueError(
+                        f"Attention mask should be of size {(bsz * num_group, 1, group_size, group_size)}, but is {attention_mask.shape}"
+                    )
+            else:
+                attention_mask = attention_mask.reshape([bsz, 1, q_len, kv_seq_len])
+                if attention_mask.shape != [bsz, 1, q_len, kv_seq_len]:
+                    raise ValueError(
+                        f"Attention mask should be of shape {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.shape}"
+                    )
+
+            attn_weights = attn_weights + attention_mask
+            if not paddle.in_dynamic_mode():
                 attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
+            else:
+                with paddle.amp.auto_cast(False):
+                    attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").astype(query_states.dtype)
 
-        attn_weights = F.dropout(attn_weights, p=config.attention_dropout, training=training)
+            attn_weights = F.dropout(attn_weights, p=config.attention_dropout, training=training)
 
-        attn_output = paddle.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose([0, 2, 1, 3])
+            attn_output = paddle.matmul(attn_weights, value_states)
+            attn_output = attn_output.transpose([0, 2, 1, 3])
 
-        if sequence_parallel:
-            attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])
-        else:
-            attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
-        return (attn_output, attn_weights) if output_attentions else attn_output
+            if use_ssa:
+                # Shift back the attention output
+                attn_output = attn_output.reshape([bsz, q_len, num_heads, group_size, head_dim])
+                attn_output[:, :, num_heads // 2:] = attn_output[:, :, num_heads // 2:].roll(group_size // 2, axis=2)
+
+            if sequence_parallel:
+                attn_output = attn_output.reshape([bsz * q_len, head_dim * num_heads])
+            else:
+                attn_output = attn_output.reshape([bsz, q_len, head_dim * num_heads])
+            return (attn_output, attn_weights) if output_attentions else attn_output
 
 
 def masked_fill(x, mask, value):
