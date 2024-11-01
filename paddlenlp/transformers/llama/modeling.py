@@ -409,11 +409,16 @@ def scaled_dot_product_attention(
             
             # [ bz, seqlen, nhead, head_dim] -> [ bz, nhead, seqlen, head_dim]
             query_states = paddle.transpose(query_states, [0, 2, 1, 3])
+            # merge with the next transpose
             key_states = paddle.transpose(key_states, [0, 2, 1, 3])
             value_states = paddle.transpose(value_states, [0, 2, 1, 3])
 
             # matmul and devide by sqrt(head_dim)
-            attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+            if get_env_device() == "intel_hpu":
+                # optimize div(const) to mul(const) for better performance  
+                attn_weights = paddle.matmul(query_states * (1 / math.sqrt(head_dim)), key_states.transpose([0, 1, 3, 2]))
+            else:
+                attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
 
             # then add alibi bias
             if alibi is not None:
@@ -430,6 +435,9 @@ def scaled_dot_product_attention(
             if reshard_layer is not None:
                 attention_mask = None
 
+            # NOTE: we only call get_triangle_upper_mask under PP setup
+            # FIXME ZHUI when we use pipeline parallel, the attention_mask can be None
+            # we just make it triangle_upper_mask
             if attention_mask is None:
                 attention_mask = get_triangle_upper_mask(attn_weights)
             attention_mask = attention_mask.reshape([bsz, 1, q_len, kv_seq_len])
