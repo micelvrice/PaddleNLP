@@ -290,7 +290,12 @@ def ssa_scaled_dot_product_attention(
         return (attn_output, attn_weights) if output_attentions else attn_output
 
     # matmul and devide by sqrt(head_dim)
-    attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+    if get_env_device() == "intel_hpu":
+        # optimize div(const) to mul(const) for better performance
+        attn_weights = paddle.matmul(query_states * (1 / math.sqrt(head_dim)), key_states.transpose([0, 1, 3, 2]))
+    else:
+        attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
+
     # then add alibi bias
     if alibi is not None:
         alibi = alibi.reshape([bsz, num_heads, 1, -1])
@@ -307,9 +312,11 @@ def ssa_scaled_dot_product_attention(
     if reshard_layer is not None:
         attention_mask = None
 
+    # NOTE: we only call get_triangle_upper_mask under PP setup
+    # FIXME ZHUI when we use pipeline parallel, the attention_mask can be None
+    # we just make it triangle_upper_mas
     if attention_mask is None:
         attention_mask = get_triangle_upper_mask(attn_weights)
-    
     attention_mask = paddle.tile(paddle.cast(attention_mask[:, :, :group_size, :group_size], dtype="float32"), [num_group, 1, 1, 1])
     if attention_mask.shape != [bsz * num_group, 1, group_size, group_size]:
         raise ValueError(
