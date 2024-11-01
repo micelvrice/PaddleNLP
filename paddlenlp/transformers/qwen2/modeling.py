@@ -279,9 +279,10 @@ def scaled_dot_product_attention(
             attention_mask,
             output_attentions,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            training,
-            sequence_parallel,
-            ssa_group_size_ratio
+            training=True,
+            sequence_parallel=False,
+            ssa_group_size_ratio=None
+
         )
     else:
         if config.use_flash_attention and flash_attention:
@@ -295,7 +296,7 @@ def scaled_dot_product_attention(
                 value_states,
                 attention_mask,
                 output_attentions,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                 sequence_parallel=sequence_parallel,
             )
             
