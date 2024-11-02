@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import numpy as np
-import paddle
 
 from paddlenlp.peft import LoRAModel, PrefixModelForCausalLM
 
@@ -194,21 +192,18 @@ def tokenize_rounds_example(tokenizer, example, data_args, **kwargs):
     return tokenized_source, labels
 
 
-def convert_example_common(
-    example, tokenizer, data_args, is_test=True, zero_padding=False, flash_mask=False
-):
-    
-    
+def convert_example_common(example, tokenizer, data_args, is_test=True, zero_padding=False, flash_mask=False):
+
     if data_args.autoregressive:
 
         tokenized_text = tokenize_unsupervised_example(tokenizer, example, data_args)
-        input_ids = tokenized_text['input_ids']
+        input_ids = tokenized_text["input_ids"]
         labels = input_ids
 
         input_ids = input_ids[:-1] + [tokenizer.eos_token_id]
         labels = labels[1:] + [-100]
         seq_length = len(input_ids)
-        features = {"input_ids": input_ids, "labels": labels}    
+        features = {"input_ids": input_ids, "labels": labels}
     else:
         if tokenizer.chat_template is not None:
             return convert_rounds_example_common(example, tokenizer, data_args, is_test, zero_padding, flash_mask)
