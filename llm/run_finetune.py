@@ -108,6 +108,7 @@ def main():
     if get_env_device() == "xpu" and training_args.gradient_accumulation_steps > 1:
         try:
             from paddle_xpu.layers.nn.linear import LinearConfig  # noqa: F401
+
             LinearConfig.enable_accumulate_steps_opt()
             LinearConfig.set_accumulate_steps(training_args.gradient_accumulation_steps)
         except ImportError:
@@ -141,10 +142,12 @@ def main():
     LlmMetaConfig.set_llm_config(model_config, training_args)
 
     if training_args.use_ssa:
-        assert training_args.ssa_group_size_ratio is not None, "ssa_group_size_ratio must be specified when use_ssa is True"
+        assert (
+            training_args.ssa_group_size_ratio is not None
+        ), "ssa_group_size_ratio must be specified when use_ssa is True"
         model_config.use_ssa = True
         model_config.ssa_group_size_ratio = training_args.ssa_group_size_ratio
-        
+
         orig_ctx_len = getattr(model_config, "max_position_embeddings", None)
         if orig_ctx_len and data_args.max_length > orig_ctx_len:
             scaling_factor = data_args.max_length / orig_ctx_len
@@ -156,7 +159,7 @@ def main():
                 "dim": model_config.hidden_size // model_config.num_attention_heads,
                 "max_position_embeddings": data_args.max_length,
                 "scaling_factor": scaling_factor,
-                "base": model_args.base
+                "base": model_args.base,
             }
 
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
@@ -365,7 +368,7 @@ def main():
         trans_func = partial(convert_example_common, tokenizer=tokenizer, data_args=data_args)
     else:
         trans_func = partial(get_convert_example(model), tokenizer=tokenizer, data_args=data_args)
-        
+
     train_ds = (
         train_ds.map(
             partial(trans_func, is_test=False, zero_padding=data_args.zero_padding, flash_mask=model_args.flash_mask)
@@ -392,7 +395,7 @@ def main():
                 trans_func,
                 is_test=data_args.eval_with_do_generation,
                 zero_padding=eval_zero_padding,
-                flash_mask=model_args.flash_mask
+                flash_mask=model_args.flash_mask,
             )
         )
         if dev_ds is not None
