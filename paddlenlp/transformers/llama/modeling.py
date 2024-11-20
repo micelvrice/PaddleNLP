@@ -212,9 +212,8 @@ def shift(qkv, bsz, q_len, group_size, num_heads, head_dim):
     # Roll the qkv tensor along the sequence length axis
     qkv[:, num_heads // 2 :] = qkv[:, num_heads // 2 :].roll(shift_amount, axis=2)
 
-    # Transpose and reshape the tensor to the desired shape
-    qkv = qkv.transpose([0, 2, 1, 3]).reshape([bsz * (q_len // group_size), num_heads, group_size, head_dim])
-
+    # Reshape the tensor to the desired shape
+    qkv = qkv.reshape([bsz * (q_len // group_size), group_size, num_heads, head_dim])
     return qkv
 
 
@@ -259,7 +258,6 @@ def ssa_scaled_dot_product_attention(
     query_states = shift(query_states, bsz, q_len, group_size, num_heads, head_dim)
     key_states = shift(key_states, bsz, q_len, group_size, num_heads, head_dim)
     value_states = shift(value_states, bsz, q_len, group_size, num_heads, head_dim)
-
     if config.use_flash_attention and flash_attention:
         # [bs*num_group, nhead, group_size, head_dim] ->  [ bz*num_group, grou_size, nhead, head_dim]
         query_states = paddle.transpose(query_states, [0, 2, 1, 3])
@@ -298,19 +296,16 @@ def ssa_scaled_dot_product_attention(
         # merge with the next transpose
         key_states = paddle.transpose(key_states, [0, 2, 1, 3])
         value_states = paddle.transpose(value_states, [0, 2, 1, 3])
-
         # matmul and devide by sqrt(head_dim)
         if get_env_device() == "intel_hpu":
             # optimize div(const) to mul(const) for better performance
             attn_weights = paddle.matmul(query_states * (1 / math.sqrt(head_dim)), key_states.transpose([0, 1, 3, 2]))
         else:
             attn_weights = paddle.matmul(query_states / math.sqrt(head_dim), key_states.transpose([0, 1, 3, 2]))
-
         # then add alibi bias
         if alibi is not None:
             alibi = alibi.reshape([bsz, num_heads, 1, -1])
             attn_weights = attn_weights + alibi
-
         if paddle.in_dynamic_mode() and attn_weights.shape != [bsz * num_group, num_heads, group_size, group_size]:
             raise ValueError(
                 f"Attention weights should be of shape {(bsz * num_group, num_heads, group_size, group_size)}, but is"
@@ -347,7 +342,6 @@ def ssa_scaled_dot_product_attention(
         # shift back
         attn_output = attn_output.reshape([bsz, q_len, num_heads, head_dim])
         attn_output[:, :, num_heads // 2 :] = attn_output[:, :, num_heads // 2 :].roll(group_size // 2, axis=1)
-
         if reshard_layer is not None:
             attn_output = reshard_layer(
                 attn_output,

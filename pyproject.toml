@@ -28,6 +28,7 @@ testpaths = [
     "tests/prompt",
     # "tests/taskflow",  TODO (paddle 2.5.1 breaks this test suite, debug later)
     "tests/utils",
+    "tests/longlora",
 ]
 python_files = [
     "test.py",
