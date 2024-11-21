@@ -56,11 +56,15 @@ class TrainingArguments(TrainingArguments):
     )
     use_ssa: bool = field(
         default=False,
-        metadata={"help": "Whether to use Shifted Sparse Attention (SSA), an efficient attention mechanism introduced in the LongLoRA paper."},
+        metadata={
+            "help": "Whether to use Shifted Sparse Attention (SSA), an efficient attention mechanism introduced in the LongLoRA paper."
+        },
     )
     ssa_group_size_ratio: float = field(
         default=0.25,
-        metadata={"help": "The ratio parameter for grouping in SSA, controlling the number of tokens considered in each group for sparse attention calculation."},
+        metadata={
+            "help": "The ratio parameter for grouping in SSA, controlling the number of tokens considered in each group for sparse attention calculation."
+        },
     )
 
     def __post_init__(self):
@@ -148,6 +152,8 @@ class DataArgument:
         default=False,
         metadata={"help": "Whether to use autoregressive mode."},
     )
+    # Pose ralated parameters
+    use_pose_convert: bool = field(default=False, metadata={"help": "Whether to use PoSE data conversion function"})
 
     def __post_init__(self):
         if self.task_name_or_path is not None:
@@ -240,7 +246,21 @@ class ModelArgument:
     neftune: bool = field(default=False, metadata={"help": "Whether to apply NEFT"})
     neftune_noise_alpha: float = field(default=5.0, metadata={"help": "NEFT noise alpha"})
     flash_mask: bool = field(default=False, metadata={"help": "Whether to use flash_mask in flash attention."})
-    base: float = field(default=10000.0, metadata={"help": "The base parameter used in RotaryEmbedding to calculate the frequency of the sinusoidal encoding."})
+    base: float = field(
+        default=10000.0,
+        metadata={
+            "help": "The base parameter used in RotaryEmbedding to calculate the frequency of the sinusoidal encoding."
+        },
+    )
+
+    # long sequence strategy
+    use_long_sequence_strategies: bool = field(
+        default=False, metadata={"help": "Whether to use long sequence strategy"}
+    )
+    rope_scaling_factor: float = field(default=1.0, metadata={"help": "Rope extension scaling factor"})
+    strategy_type: str = field(default=None, metadata={"help": "Long sequence strategy type"})
+    strategy_name: str = field(default=None, metadata={"help": "Long sequence strategy name"})
+
 
 @dataclass
 class QuantArgument:

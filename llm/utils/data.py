@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import random
 
 import numpy as np
 
@@ -69,20 +70,24 @@ class DataFormatError(ValueError):
 
 
 def tokenize_unsupervised_example(tokenizer, example, data_args, is_test=True, zero_padding=False, flash_mask=False):
-    if "text" in example:
-        source = example["text"][0] if isinstance(example["text"], list) else example["text"]
+    if "src" in example:
+        source = example["src"][0] if isinstance(example["src"], list) else example["src"]
     else:
         raise DataFormatError(
             f"Example format is wrong, please check: {example} or rewrite tokenize_example in data.py "
         )
-    outputs = tokenizer(
+    tokenized_source = tokenizer(
         source,
         truncation=False,
         padding=True,
         pad_to_multiple_of=data_args.max_length,
+        add_special_tokens=True,
     )
 
-    return outputs
+    if data_args.use_pose_convert:
+        tokenized_source = get_example_pose(tokenized_source, tokenizer, data_args)
+
+    return tokenized_source
 
 
 def tokenize_example(tokenizer, example, data_args):
@@ -317,3 +322,28 @@ def convert_example_chatglm(example, tokenizer, data_args, is_test=True, zero_pa
             features["position_ids"] = np.stack([position_ids, block_position_ids], axis=0)
 
         return features
+
+
+def get_example_pose(tokenized_source, tokenizer, data_args):
+
+    ids = tokenized_source["input_ids"]
+    len_chunk = min(len(ids), data_args.max_length)
+    if len(tokenized_source["input_ids"]) <= data_args.max_length:
+        tokenized_source["input_ids"] += [tokenizer.eos_token_id]
+
+    len_input = len(ids)
+
+    lt1 = 0  # chunk1 start pos
+    rt1 = random.randint(1, (len_chunk) // 2)  # chunk1 end pos
+
+    rt2 = random.randint(lt1 + len_chunk, len_input - 1)  # chunk2 end pos
+    lt2 = rt2 - (len_chunk - (rt1 - lt1))  # chunk2 start pos
+    chunked_ids = ids[lt1:rt1] + ids[lt2:rt2]
+    labels = ids[lt1 + 1 : rt1 + 1] + ids[lt2 + 1 : rt2 + 1]
+
+    pos_ids = range(len(chunked_ids))
+    pos_ids = [x + lt1 if i < rt1 - lt1 else x + (lt2 - (rt1 - lt1)) for i, x in enumerate(pos_ids)]
+
+    features = {"input_ids": chunked_ids, "labels": labels, "position_ids": pos_ids}
+
+    return features
