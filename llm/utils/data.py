@@ -201,14 +201,19 @@ def convert_example_common(example, tokenizer, data_args, is_test=True, zero_pad
 
     if data_args.autoregressive:
 
-        tokenized_text = tokenize_unsupervised_example(tokenizer, example, data_args)
-        input_ids = tokenized_text["input_ids"]
-        labels = input_ids
-
-        input_ids = input_ids[:-1] + [tokenizer.eos_token_id]
-        labels = labels[1:] + [-100]
-        seq_length = len(input_ids)
+        tokenized_source = tokenize_unsupervised_example(
+            tokenizer, example, data_args, is_test=True, zero_padding=False, flash_mask=False
+        )
+        input_ids = tokenized_source["input_ids"]
+        if "labels" in tokenized_source:
+            labels = tokenized_source["labels"]
+        else:
+            labels = input_ids
+            input_ids = input_ids[:-1] + [tokenizer.eos_token_id]
+            labels = labels[1:] + [-100]
         features = {"input_ids": input_ids, "labels": labels}
+        if "position_ids" in tokenized_source:
+            features["position_ids"] = tokenized_source["position_ids"]
     else:
         if tokenizer.chat_template is not None:
             return convert_rounds_example_common(example, tokenizer, data_args, is_test, zero_padding, flash_mask)
