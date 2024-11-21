@@ -325,7 +325,7 @@ def ssa_scaled_dot_product_attention(
             paddle.cast(attention_mask[:, :, :group_size, :group_size], dtype="float32"), [num_group, 1, 1, 1]
         )
         if attention_mask.shape != [bsz * num_group, 1, group_size, group_size]:
-            attention_mask = attention_mask[: bsz * num_group, 1, group_size, group_size]
+            attention_mask = attention_mask[: bsz * num_group, :, :, :]
 
         attn_weights = attn_weights + attention_mask
         if not paddle.in_dynamic_mode():
