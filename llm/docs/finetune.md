@@ -134,8 +134,6 @@ python merge_lora_params.py \
 - `strategy_type`: 长序列扩展策略的类型，默认为 None。
 - `strategy_name`: 长序列扩展策略的具体名称，默认为 None。
 - `rope_scaling_factor`: 应用 RoPE 扩展策略时的缩放因子。
-- `use_ssa`: 是否开启 Shift Sparse Attention (SSA) 微调策略，默认为 False。
-- `ssa_group_size_ratio`: SSA 微调策略中用于控制序列分组的大小，模型为0.25。
 </div>
 
 <summary>&emsp; 数据参数（DataArgument）</summary><div>
@@ -183,4 +181,6 @@ python merge_lora_params.py \
 - `pipeline_parallel_degree`: 表示划分流水线的大小.(假设该参数为4, 模型12层, 则每一个 pp stage 包含3层模型) 默认值-1, 表示不启用流水线并行。
 - `sharding_parallel_degree`: 表示分组参数切片的数据并行大小. 默认值1, 表示不启用分组参数切片的数据并行。
 - `sharding`:是否使用 Paddle 的 Sharding 数据并行功能，用户的参数。支持 sharding `stage1`, `stage2` or `stage3`。其中`stage2``stage3`可以和`offload`组合使用。
+- `use_ssa`: 是否开启 Shift Sparse Attention (SSA) 微调策略，默认为 False。
+- `ssa_group_size_ratio`: SSA 微调策略中用于控制序列分组的大小，模型为0.25。
 </div>
