@@ -80,7 +80,7 @@ def tokenize_unsupervised_example(tokenizer, example, data_args, is_test=True, z
         source,
         truncation=False,
         padding=True,
-        pad_to_multiple_of=data_args.max_length,
+        max_length=data_args.scaled_max_length,
         add_special_tokens=True,
     )
 
@@ -200,7 +200,6 @@ def tokenize_rounds_example(tokenizer, example, data_args, **kwargs):
 def convert_example_common(example, tokenizer, data_args, is_test=True, zero_padding=False, flash_mask=False):
 
     if data_args.autoregressive:
-
         tokenized_source = tokenize_unsupervised_example(
             tokenizer, example, data_args, is_test=True, zero_padding=False, flash_mask=False
         )
