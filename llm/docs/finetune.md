@@ -184,3 +184,17 @@ python merge_lora_params.py \
 - `use_ssa`: 是否开启 Shift Sparse Attention (SSA) 微调策略，默认为 False。
 - `ssa_group_size_ratio`: SSA 微调策略中用于控制序列分组的大小，模型为0.25。
 </div>
+
+
+
+<summary>&emsp; 表征微调(ReFT)参数（ReftArgument） </summary><div>
+
+- `model_name_or_path`: 预训练模型名称或者本地的模型路径，用于热启模型和分词器，默认为 None。每个模型**支持模型权重**详见各模型目录。
+- `layers`: 干预模型的那些层，默认为 all, 干预所有层。
+- `position`: 干预哪些位置的 token，默认为 f7, 干预前7个 token。
+- `intervention_type`: 干预网络的类型，默认为 LoReftIntervention。
+- `rank`: 干预网络的低秩，默认为 8。
+- `act_fn`: 干预网络中的激活函数，默认为 linear。
+- `add_bias`: 干预网络中是否添加偏置，默认为 False。
+- `dropout`:  干预网络中的 Dropout rate，默认为 0.00。
+</div>
