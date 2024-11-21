@@ -325,9 +325,7 @@ def ssa_scaled_dot_product_attention(
             paddle.cast(attention_mask[:, :, :group_size, :group_size], dtype="float32"), [num_group, 1, 1, 1]
         )
         if attention_mask.shape != [bsz * num_group, 1, group_size, group_size]:
-            raise ValueError(
-                f"Attention mask should be of size {(bsz * num_group, 1, group_size, group_size)}, but is {attention_mask.shape}"
-            )
+            attention_mask = attention_mask[: bsz * num_group, 1, group_size, group_size]
 
         attn_weights = attn_weights + attention_mask
         if not paddle.in_dynamic_mode():
@@ -432,7 +430,6 @@ def scaled_dot_product_attention(
             if alibi is not None:
                 alibi = alibi.reshape([bsz, num_heads, 1, -1])
                 attn_weights = attn_weights + alibi
-
             if paddle.in_dynamic_mode() and attn_weights.shape != [bsz, num_heads, q_len, kv_seq_len]:
                 raise ValueError(
                     f"Attention weights should be of shape {(bsz, num_heads, q_len, kv_seq_len)}, but is"
