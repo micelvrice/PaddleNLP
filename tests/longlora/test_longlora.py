@@ -19,10 +19,9 @@ import unittest
 import numpy as np
 import paddle
 from parameterized import parameterized_class
+from testing_utils import LLMTest
 
 from paddlenlp.transformers import AutoConfig, AutoModelForCausalLM
-
-from .testing_utils import LLMTest
 
 all_inputs = [
     # llama-7b
