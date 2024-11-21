@@ -246,11 +246,10 @@ def ssa_scaled_dot_product_attention(
     assert ssa_group_size_ratio is not None, "ssa_group_size_ratio must be provided"
 
     # Calculate the group size based on the sequence length and the group size ratio
-    group_size = int(q_len * ssa_group_size_ratio)
-
+    group_size = q_len if int(q_len * ssa_group_size_ratio) == 0 else int(q_len * ssa_group_size_ratio)
     # Ensure the sequence length is divisible by the group size
-    if q_len % group_size > 0:
-        raise ValueError("q_len %d should be divisible by group size %d." % (q_len, group_size))
+    if q_len % group_size != 0:
+        raise ValueError(f"q_len {q_len} must be divisible by group size {group_size}.")
 
     num_group = q_len // group_size
 
